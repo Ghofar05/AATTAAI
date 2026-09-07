@@ -68,7 +68,6 @@ var _btn_select_filtered: Button
 var _last_scanned_folder: String = ""
 
 # Controls
-var _pivot_check: CheckBox
 var _swapper_check: CheckBox
 var _filter_option: OptionButton
 var _interp_option: OptionButton
@@ -101,8 +100,10 @@ func _exit_tree() -> void:
 	remove_tool_menu_item("Batch Set Animation Interpolation...")
 	if _import_dialog:
 		_import_dialog.queue_free()
+		_import_dialog = null
 	if _interp_dialog:
 		_interp_dialog.queue_free()
+		_interp_dialog = null
 
 func _on_import_menu_pressed() -> void:
 	if not _import_dialog:
@@ -201,7 +202,6 @@ func _save_settings() -> void:
 	config.set_value("settings", "png_path", _png_edit.text.strip_edges())
 	config.set_value("settings", "out_path", _out_edit.text.strip_edges())
 	config.set_value("settings", "fps_override", int(_fps_spin.value))
-	config.set_value("settings", "use_pivot", _pivot_check.button_pressed)
 	config.set_value("settings", "add_swapper", _swapper_check.button_pressed)
 	config.set_value("settings", "filter_mode", _filter_option.selected)
 	if _interp_option:
@@ -223,7 +223,6 @@ func _load_settings() -> Dictionary:
 		"png_path": "",
 		"out_path": "res://imported_character.tscn",
 		"fps_override": 0,
-		"use_pivot": true,
 		"add_swapper": true,
 		"filter_mode": 0,
 		"interp_mode": 0,
@@ -237,7 +236,6 @@ func _load_settings() -> Dictionary:
 		res["png_path"] = config.get_value("settings", "png_path", "")
 		res["out_path"] = config.get_value("settings", "out_path", "res://imported_character.tscn")
 		res["fps_override"] = int(config.get_value("settings", "fps_override", 0))
-		res["use_pivot"] = config.get_value("settings", "use_pivot", true)
 		res["add_swapper"] = config.get_value("settings", "add_swapper", true)
 		res["filter_mode"] = config.get_value("settings", "filter_mode", 0)
 		res["interp_mode"] = config.get_value("settings", "interp_mode", 0)
@@ -332,6 +330,7 @@ func _update_animation_checklist(folder_path: String) -> void:
 	_last_scanned_folder = clean_path
 
 	for child in _anim_container.get_children():
+		_anim_container.remove_child(child)
 		child.queue_free()
 	_anim_checkboxes.clear()
 
@@ -392,7 +391,9 @@ func _on_anim_selection_changed() -> void:
 
 	var atlas_path := _atlas_edit.text.strip_edges()
 	var png_path := _png_edit.text.strip_edges()
-	var files_ok = FileAccess.file_exists(atlas_path) and FileAccess.file_exists(png_path)
+	var folder_path := _folder_edit.text.strip_edges()
+	var folder_ok := (not folder_path.is_empty()) and (FileAccess.file_exists(folder_path) or DirAccess.dir_exists_absolute(folder_path))
+	var files_ok = FileAccess.file_exists(atlas_path) and FileAccess.file_exists(png_path) and folder_ok
 
 	if _anim_title_lbl:
 		_anim_title_lbl.text = "📋 Animations (%d/%d selected):" % [selected.size(), _anim_checkboxes.size()]
@@ -434,7 +435,7 @@ func _update_preview() -> void:
 	var folder_path := _folder_edit.text.strip_edges()
 	var png_path := _png_edit.text.strip_edges()
 	var fps_val := int(_fps_spin.value)
-	var use_pivot := _pivot_check.button_pressed
+	var use_pivot := true
 	var add_swapper := _swapper_check.button_pressed
 	var filter_idx := _filter_option.selected
 	var filter_mode := "Linear" if filter_idx == 0 else "Nearest"
@@ -472,7 +473,7 @@ func _update_preview() -> void:
 					_preview_player.play(anims[0])
 					_play_btn.text = "⏸️ Pause"
 			
-			_preview_player.animation_finished.connect(func(_anim_name: String):
+			_preview_player.animation_finished.connect(func(_anim_name: StringName):
 				if _loop_btn and not _loop_btn.button_pressed:
 					_play_btn.text = "▶️ Play"
 			)
@@ -604,7 +605,7 @@ func _build_dialog() -> Window:
 	_out_edit = LineEdit.new()
 	_out_edit.text = "res://imported_character.tscn"
 	_out_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	form_vbox.add_child(_out_edit)
+	var row_out := _browse_row(_out_edit); form_vbox.add_child(row_out)
 
 	# ── FPS override ─────────────────────────────────────
 	var fps_row := HBoxContainer.new(); form_vbox.add_child(fps_row)
@@ -633,11 +634,6 @@ func _build_dialog() -> Window:
 	interp_row.add_child(_interp_option)
 
 	# ── Checkboxes ───────────────────────────────────────
-	_pivot_check = CheckBox.new()
-	_pivot_check.text = "Use Pivot Wrapper Nodes (Allows Manual Recenter)"
-	_pivot_check.button_pressed = true
-	form_vbox.add_child(_pivot_check)
-
 	_swapper_check = CheckBox.new()
 	_swapper_check.text = "Add Visual Controller Script (@tool)"
 	_swapper_check.button_pressed = true
@@ -818,6 +814,7 @@ func _build_dialog() -> Window:
 	var fd_atlas := _make_file_dialog(dlg, "*.json", _atlas_edit)
 	var fd_png   := _make_file_dialog(dlg, "*.png",  _png_edit)
 	var fd_anim_file := _make_file_dialog(dlg, "*.json", _folder_edit)
+	var fd_out   := _make_file_dialog(dlg, "*.tscn", _out_edit, FileDialog.FILE_MODE_SAVE_FILE)
 
 	var fd_folder := FileDialog.new()
 	fd_folder.file_mode = FileDialog.FILE_MODE_OPEN_DIR
@@ -826,6 +823,7 @@ func _build_dialog() -> Window:
 
 	_get_browse_btn(row_atlas).pressed.connect(func(): fd_atlas.popup_centered(Vector2i(700,500)))
 	_get_browse_btn(row_png).pressed.connect(func():   fd_png.popup_centered(Vector2i(700,500)))
+	_get_browse_btn(row_out).pressed.connect(func():   fd_out.popup_centered(Vector2i(700,500)))
 	btn_folder_file.pressed.connect(func(): fd_anim_file.popup_centered(Vector2i(700,500)))
 	btn_folder.pressed.connect(func(): fd_folder.popup_centered(Vector2i(700,500)))
 
@@ -866,7 +864,6 @@ func _build_dialog() -> Window:
 	_png_edit.text = settings["png_path"]
 	_out_edit.text = settings["out_path"]
 	_fps_spin.value = settings["fps_override"]
-	_pivot_check.button_pressed = settings["use_pivot"]
 	_swapper_check.button_pressed = settings["add_swapper"]
 	_filter_option.selected = settings["filter_mode"]
 	_interp_option.selected = settings["interp_mode"]
@@ -896,7 +893,6 @@ func _build_dialog() -> Window:
 		_validate_all()
 	)
 	
-	_pivot_check.pressed.connect(_validate_all)
 	_swapper_check.pressed.connect(_validate_all)
 	_filter_option.item_selected.connect(func(_idx): _validate_all())
 	_interp_option.item_selected.connect(func(_idx): _validate_all())
@@ -920,19 +916,28 @@ func _build_dialog() -> Window:
 		_last_scanned_folder = ""
 		_validate_all()
 	)
+	fd_out.file_selected.connect(func(path: String):
+		_out_edit.text = path
+		_validate_all()
+	)
 
 	_play_btn.pressed.connect(func():
-		if not _preview_player: return
+		if not is_instance_valid(_preview_player): return
 		if _preview_player.is_playing():
 			_preview_player.pause()
 			_play_btn.text = "▶️ Play"
 		else:
+			var anim_name = _preview_player.assigned_animation
+			if anim_name != "":
+				var anim_res = _preview_player.get_animation(anim_name)
+				if anim_res and _preview_player.current_animation_position >= anim_res.length:
+					_preview_player.seek(0.0, true)
 			_preview_player.play()
 			_play_btn.text = "⏸️ Pause"
 	)
 
 	_anim_option.item_selected.connect(func(idx: int):
-		if not _preview_player: return
+		if not is_instance_valid(_preview_player): return
 		var anim_name = _anim_option.get_item_text(idx)
 		_preview_player.play(anim_name)
 		_play_btn.text = "⏸️ Pause"
@@ -940,13 +945,13 @@ func _build_dialog() -> Window:
 
 	_scrub_slider.drag_started.connect(func():
 		_is_scrubbing = true
-		if _preview_player:
+		if is_instance_valid(_preview_player):
 			_was_playing_before_scrub = _preview_player.is_playing()
 			_preview_player.pause()
 	)
 	_scrub_slider.drag_ended.connect(func(_value_changed: bool):
 		_is_scrubbing = false
-		if _preview_player:
+		if is_instance_valid(_preview_player):
 			var anim_name = _preview_player.assigned_animation
 			if anim_name != "":
 				var length = _preview_player.get_animation(anim_name).length
@@ -960,7 +965,7 @@ func _build_dialog() -> Window:
 	)
 	_scrub_slider.value_changed.connect(func(val: float):
 		if _is_updating_slider: return
-		if _preview_player:
+		if is_instance_valid(_preview_player):
 			var anim_name = _preview_player.assigned_animation
 			if anim_name != "":
 				var length = _preview_player.get_animation(anim_name).length
@@ -969,7 +974,7 @@ func _build_dialog() -> Window:
 	)
 
 	_preview_timer.timeout.connect(func():
-		if _is_scrubbing or not _preview_player: return
+		if _is_scrubbing or not is_instance_valid(_preview_player): return
 		var anim_name = _preview_player.assigned_animation
 		if anim_name == "": return
 		var length = _preview_player.get_animation(anim_name).length
@@ -989,7 +994,7 @@ func _build_dialog() -> Window:
 		var png_path := _png_edit.text.strip_edges()
 		var out_path := _out_edit.text.strip_edges()
 		var fps_val := int(_fps_spin.value)
-		var use_pivot := _pivot_check.button_pressed
+		var use_pivot := true
 		var add_swapper := _swapper_check.button_pressed
 		var filter_idx := _filter_option.selected
 		var filter_mode := "Linear" if filter_idx == 0 else "Nearest"
@@ -1034,7 +1039,7 @@ func _build_dialog() -> Window:
 		var png_path := _png_edit.text.strip_edges()
 		var out_path := _out_edit.text.strip_edges()
 		var fps_val := int(_fps_spin.value)
-		var use_pivot := _pivot_check.button_pressed
+		var use_pivot := true
 		var add_swapper := _swapper_check.button_pressed
 		var filter_idx := _filter_option.selected
 		var filter_mode := "Linear" if filter_idx == 0 else "Nearest"
@@ -1185,9 +1190,9 @@ func _browse_row(edit: LineEdit) -> HBoxContainer:
 func _get_browse_btn(row: HBoxContainer) -> Button:
 	return row.get_child(1) as Button
 
-func _make_file_dialog(parent: Window, filter: String, target: LineEdit) -> FileDialog:
+func _make_file_dialog(parent: Window, filter: String, target: LineEdit, mode: FileDialog.FileMode = FileDialog.FILE_MODE_OPEN_FILE) -> FileDialog:
 	var fd := FileDialog.new()
-	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	fd.file_mode = mode
 	fd.access = FileDialog.ACCESS_RESOURCES
 	fd.filters = [filter]
 	parent.add_child(fd)

@@ -31,9 +31,19 @@ Version 2.0.0 is a major milestone release introducing powerful visual customiza
 - **📏 Coordinate & Floor Grid**: World-space ground level line (Red X-axis), center symmetry line (Green Y-axis), pivot marker `(0, 0)`, and 64px/32px grid lines with a dedicated toggle button.
 - **🔁 Loop / Play-Once Toggle**: Toggle preview looping on or off (plays once and stops at the final frame).
 - **⚡ Real-Time FPS Override**: Instant preview update when adjusting the FPS override spinbox.
-- **Debounced Viewport**: Silky-smooth 60 FPS editor performance even when managing massive animation packs.
+- **Debounced Viewport & Memory Safeguards**: Silky-smooth 60 FPS editor performance with strict instance validation guards preventing freed instance errors.
 
-### 5. ⚡ Batch Set Animation Interpolation Tool
+### 5. 🛠️ Built-in Node2D Pivot Wrappers & Zero-Sprite-Transform
+- **Built-in Standard**: Every body part is automatically constructed with an intermediate `Node2D` wrapper parent (`part_name -> Sprite`).
+- **Clean Separation of Concerns**: All animation transforms (`position`, `rotation`/`r_vec`, `scale`) are keyframed **exclusively** on the `Node2D` wrapper.
+- **Zero Transform Tracks on Child Sprites**: Child `Sprite2D` nodes only receive `region_rect` keyframes for sprite swaps. You can freely offset or tweak sprite pivots in the Godot viewport—animations will **never** overwrite your adjustments!
+
+### 6. 📁 Smart Directory Creation & File Browsing
+- **Output Scene Browse Button**: Dedicated file browser with `*.tscn` save-dialog filters.
+- **Auto-create Parent Directories**: Automatically generates missing subdirectories recursively when saving imported scenes (e.g. `res://characters/boss/boss.tscn`).
+- **EDAPT & Helper Filtering**: Automatically excludes EDAPT rigging helpers (`EDAPT objects/Center Marker`, `MagnetTargets`) and single-frame root stage containers.
+
+### 7. ⚡ Batch Set Animation Interpolation Tool
 - New editor tool accessible from **Project Menu → Tools → Batch Set Animation Interpolation...**.
 - Batch-modify track interpolation types (`Linear`, `Nearest / Stepped`, `Cubic`) across any character scene using exact names, comma-separated lists, or wildcard patterns (e.g. `attack*`, `hit_react`, `*pixel*`).
 
@@ -111,7 +121,8 @@ Looking for production-ready, high-quality Adobe Animate 2D character rigs, anim
 - **Dedicated Visual Controller (`class_name AATTAIController`)**: Built-in methods for swapping skins, overriding individual slot textures (weapons/cosmetics), and equipping custom nodes to body parts.
 - **Vector2 Rotation Blending**: Rotation is keyframed using a direction vector (`r_vec`) rather than raw float angles, natively resolving 180° rotation flipping during `AnimationTree` blending.
 - **Dynamic Z-Ordering & Keyframe Deduplication**: Discards redundant baked keyframes and preserves back-to-front layer draw order across all animations.
-- **Quick-Fix Pivot Wrappers**: Wraps sprites in parent `Node2D` pivot nodes, allowing designers to manually adjust the local pivot/offset of any body part in the Godot Viewport without modifying source assets.
+- **Built-in Node2D Pivot Wrappers**: Automatically wraps sprites in parent `Node2D` pivot nodes with transform tracks mapped strictly to the wrapper, while child `Sprite2D` nodes only keyframe `region_rect`. You can freely adjust sprite local pivots in the Godot Viewport without animation tracks overwriting them.
+- **Auto-create Parent Directories & File Browser**: Includes a dedicated Browse button with `*.tscn` save dialog filters and automatically generates target subdirectories on save.
 - **Texture Filter Selection**: Choose between `Linear (Smooth)` for high-res art and `Nearest (Pixel Art)` for crisp pixel graphics.
 - **Animation Track Interpolation Selection**: Choose how keyframes interpolate on transform tracks (`Linear` for smooth tweening, `Nearest / Stepped` for classic stepped frame-by-frame / anime cut-out feel, or `Cubic` for natural spline curves).
 
@@ -134,11 +145,11 @@ Open **Project Menu → Tools → Import Adobe Animate...**:
 2. **Spritesheet PNG**: Select your atlas texture image (e.g. `res://assets/spritemap1.png`).
 3. **Animation JSON File or Folder**: Select the master `Animation.json` or folder containing individual animation JSONs.
 4. **Configure Options**:
-   * **Use Pivot Wrapper Nodes**: Creates an intermediate `Node2D` wrapper parent for each body part sprite node. All keyframed transforms target the parent wrapper, allowing you to freely adjust the local pivot/offset of each part in the viewport without editing the importer settings.
+   * **Pivot Wrapper Nodes (Built-in Standard)**: Automatically wraps each body part sprite in an intermediate `Node2D` wrapper parent. All keyframed transforms target the parent wrapper, allowing you to freely adjust the local pivot/offset of each part in the viewport without modifying source assets.
    * **Add Visual Controller Script**: Attaches an `AATTAIController` (`@tool`) script to the root node, exposing `change_skin()`, `set_slot_texture()`, `equip()`, and animation helper APIs.
    * **Texture Filter Mode**: Choose between `Linear (Smooth)` (for high-resolution assets) and `Nearest (Pixel Art)` (for clean, sharp pixel art).
    * **Animation Interpolation Mode**: Choose between `Linear (Smooth Tween)`, `Nearest / Stepped (Frame-by-Frame)`, and `Cubic (Spline Curve)`.
-5. **Output scene path**: Target file path (e.g. `res://scenes/hero.tscn`).
+5. **Output scene path**: Target file path (e.g. `res://scenes/hero.tscn`). Click **Browse** to open the save file dialog; any missing folders are created automatically upon save.
 
 ---
 
@@ -256,7 +267,7 @@ func attack():
 func take_hit():
     visual.play_anim("hit_react")
 
-func _on_anim_finished(anim_name: String):
+func _on_anim_finished(anim_name: StringName):
     if anim_name.begins_with("attack"):
         visual.play_anim("idle")
 ```
@@ -342,6 +353,6 @@ The importer automatically extracts `position`, `rotation` (vectorized), `scale`
 
 ## Compatibility
 
-- **Godot**: Godot 4.0 – 4.4+ (GDScript `@tool`)
+- **Godot**: Godot 4.0 – 4.7+ (GDScript `@tool`)
 - **Adobe Animate**: Adobe Animate 2020 – 2025+ (JSON Texture Atlas Format)
 - **Tooling**: Fully compatible with EDAP Tools / Flash POWERTOOLS

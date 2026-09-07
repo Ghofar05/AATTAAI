@@ -38,18 +38,28 @@ func get_available_animations(anim_folder_or_file: String) -> Array:
 	for json_path in anim_files:
 		var anim_data = _load_json(json_path)
 		if anim_data == null or anim_data is String: continue
+		if _is_atlas_json(anim_data): continue
+		
+		var has_root: bool = anim_data.has("AN") and _has_timeline_animation(anim_data.get("AN", {}).get("TL", {}))
+		var master_found := false
 		if _is_master_animation_json(anim_data):
 			for s in anim_data.get("SD", {}).get("S", []):
 				if _is_animation_symbol(s):
+					master_found = true
 					var raw_name: String = s.get("SN", "")
 					var parts_array := raw_name.split("/")
 					var anim_name: String = parts_array[parts_array.size() - 1]
 					if not result.has(anim_name):
 						result.append(anim_name)
-		else:
-			var fname = json_path.get_file().get_basename()
-			if not result.has(fname):
-				result.append(fname)
+		
+		if not master_found:
+			var root_name: String = ""
+			if anim_data.has("AN"):
+				root_name = str(anim_data.get("AN", {}).get("SN", anim_data.get("AN", {}).get("N", ""))).strip_edges()
+			if root_name.is_empty():
+				root_name = json_path.get_file().get_basename()
+			if not result.has(root_name):
+				result.append(root_name)
 	return result
 
 # ─────────────────────────────────────────────────────────
@@ -126,8 +136,15 @@ func set_animations_interpolation(scene_path: String, anim_pattern: String, inte
 				modified_anims.append(anim_name)
 				for track_idx in range(anim.get_track_count()):
 					var track_path := str(anim.track_get_path(track_idx))
-					if track_path.ends_with(":position") or track_path.ends_with(":r_vec") or track_path.ends_with(":rotation") or track_path.ends_with(":scale"):
+					if track_path.ends_with(":position") or track_path.ends_with(":r_vec") or track_path.ends_with(":scale"):
 						anim.track_set_interpolation_type(track_idx, interp_type)
+					elif track_path.ends_with(":rotation"):
+						if interp_type == Animation.INTERPOLATION_LINEAR:
+							anim.track_set_interpolation_type(track_idx, Animation.INTERPOLATION_LINEAR_ANGLE)
+						elif interp_type == Animation.INTERPOLATION_CUBIC:
+							anim.track_set_interpolation_type(track_idx, Animation.INTERPOLATION_CUBIC_ANGLE)
+						else:
+							anim.track_set_interpolation_type(track_idx, interp_type)
 
 	if modified_anims.is_empty():
 		root.queue_free()
@@ -140,6 +157,7 @@ func set_animations_interpolation(scene_path: String, anim_pattern: String, inte
 		res["error"] = "PackedScene.pack() failed."
 		return res
 
+	_ensure_parent_dir(scene_path)
 	if ResourceSaver.save(packed, scene_path) != OK:
 		root.queue_free()
 		res["error"] = "Failed to save scene: " + scene_path
@@ -157,19 +175,21 @@ func _parse_all_animations(anim_files: Array, sprites: Dictionary, fps_override:
 		var anim_data = _load_json(json_path)
 		if anim_data is String or anim_data == null:
 			continue
+		if _is_atlas_json(anim_data):
+			continue
 
 		var fps: float = float(fps_override) if fps_override > 0 else _get_fps(anim_data)
+		_build_symbol_map(anim_data, sprites)
 
+		var has_master := false
 		if _is_master_animation_json(anim_data):
-			var part_symbols: Array = []
 			var anim_symbols: Array = []
 			for s in anim_data.get("SD", {}).get("S", []):
 				if _is_animation_symbol(s):
 					anim_symbols.append(s)
-				else:
-					part_symbols.append(s)
 			
 			for anim_sym in anim_symbols:
+				has_master = true
 				var raw_name: String = anim_sym.get("SN", "")
 				var parts_array := raw_name.split("/")
 				var anim_name: String = parts_array[parts_array.size() - 1]
@@ -181,24 +201,25 @@ func _parse_all_animations(anim_files: Array, sprites: Dictionary, fps_override:
 						"SN": anim_name,
 						"TL": anim_sym.get("TL", {})
 					},
-					"SD": {
-						"S": part_symbols
-					}
+					"SD": anim_data.get("SD", {})
 				}
-				_build_symbol_map(virtual_anim_data, sprites)
 				var parsed := _parse_animations(virtual_anim_data, fps)
 				for anim in parsed:
 					anim["anim_name"] = anim_name
 					all_animations.append(anim)
-		else:
-			var file_name = json_path.get_file().get_basename()
-			if not selected_animations.is_empty() and not selected_animations.has(file_name):
-				continue
-			_build_symbol_map(anim_data, sprites)
-			var parsed := _parse_animations(anim_data, fps)
-			for anim in parsed:
-				anim["anim_name"] = file_name
-				all_animations.append(anim)
+
+		if not has_master:
+			var root_name: String = ""
+			if anim_data.has("AN"):
+				root_name = str(anim_data.get("AN", {}).get("SN", anim_data.get("AN", {}).get("N", ""))).strip_edges()
+			if root_name.is_empty():
+				root_name = json_path.get_file().get_basename()
+
+			if selected_animations.is_empty() or selected_animations.has(root_name) or selected_animations.has(json_path.get_file().get_basename()):
+				var parsed := _parse_animations(anim_data, fps)
+				for anim in parsed:
+					anim["anim_name"] = root_name
+					all_animations.append(anim)
 	return all_animations
 
 # ─────────────────────────────────────────────────────────
@@ -213,6 +234,8 @@ func import_folder(atlas_json_path: String, anim_folder: String,
 				   use_pivot_wrappers: bool = true, add_skin_swapper: bool = true,
 				   texture_filter_mode: String = "Linear",
 				   interpolation_mode: String = "Linear") -> String:
+
+	_symbol_map.clear()
 
 	# 1. Atlas
 	var atlas_data = _load_json(atlas_json_path)
@@ -254,6 +277,8 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 						   interpolation_mode: String = "Linear") -> String:
 	if not FileAccess.file_exists(out_path):
 		return import_folder(atlas_json_path, anim_folder, png_path, out_path, fps_override, anim_files, selected_animations, use_pivot_wrappers, add_skin_swapper, texture_filter_mode, interpolation_mode)
+
+	_symbol_map.clear()
 
 	var atlas_data = _load_json(atlas_json_path)
 	if atlas_data is String: return "Atlas JSON: " + atlas_data
@@ -300,11 +325,27 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 	var script_path = "res://addons/AATTAAI/AATTAI_sprite.gd"
 	if ResourceLoader.exists(script_path):
 		spr_script = load(script_path)
+	else:
+		spr_script = GDScript.new()
+		spr_script.source_code = "@tool\nextends Sprite2D\n\n@export var r_vec: Vector2 = Vector2.RIGHT:\n\tset(val):\n\t\tr_vec = val\n\t\tif val.length_squared() > 0.0001:\n\t\t\trotation = val.angle()\n"
+		spr_script.reload()
 
 	var wrapper_script
 	var wrapper_script_path = "res://addons/AATTAAI/AATTAI_wrapper.gd"
 	if ResourceLoader.exists(wrapper_script_path):
 		wrapper_script = load(wrapper_script_path)
+	else:
+		wrapper_script = GDScript.new()
+		wrapper_script.source_code = "@tool\nextends Node2D\n\n@export var r_vec: Vector2 = Vector2.RIGHT:\n\tset(val):\n\t\tr_vec = val\n\t\tif val.length_squared() > 0.0001:\n\t\t\trotation = val.angle()\n"
+		wrapper_script.reload()
+
+	if add_skin_swapper and root.get_script() == null:
+		var controller_script
+		var controller_path = "res://addons/AATTAAI/AATTAI_controller.gd"
+		if ResourceLoader.exists(controller_path):
+			controller_script = load(controller_path)
+		if controller_script:
+			root.set_script(controller_script)
 
 	# Collect existing layer nodes
 	var layer_nodes: Dictionary = {}
@@ -328,6 +369,8 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 
 			if not layer_nodes.has(node_key) and not root.has_node(NodePath(node_key)):
 				var final_name := node_key
+				var init_info := _get_initial_sprite_info(node_key, all_animations)
+				var init_sp_name: String = init_info.get("sprite", "")
 				if use_pivot_wrappers:
 					var wrapper := Node2D.new()
 					if wrapper_script: wrapper.set_script(wrapper_script)
@@ -340,14 +383,13 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 					spr.texture = texture
 					spr.centered = false
 					spr.region_enabled = true
-					var def_info = _resolve_symbol(node_key, 0)
-					if not def_info.is_empty():
-						if def_info.has("pos"):
-							spr.position = def_info["pos"]
-							spr.rotation = def_info["rot"]
-							spr.scale = def_info["scale"]
-						else:
-							spr.offset = Vector2(def_info.get("ox", 0.0), def_info.get("oy", 0.0))
+					if init_sp_name != "" and sprites.has(init_sp_name):
+						var sp = sprites[init_sp_name]
+						spr.region_rect = Rect2(sp["x"], sp["y"], sp["w"], sp["h"])
+					if init_info.has("pos"):
+						spr.position = init_info["pos"]
+						spr.rotation = init_info.get("rot", 0.0)
+						spr.scale = init_info.get("scale", Vector2.ONE)
 					wrapper.add_child(spr)
 					spr.owner = root
 					layer_nodes[node_key] = wrapper
@@ -358,9 +400,11 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 					spr.texture = texture
 					spr.centered = false
 					spr.region_enabled = true
-					var def_info = _resolve_symbol(node_key, 0)
-					if not def_info.is_empty():
-						spr.offset = def_info.get("pos", Vector2(def_info.get("ox", 0.0), def_info.get("oy", 0.0)))
+					if init_sp_name != "" and sprites.has(init_sp_name):
+						var sp = sprites[init_sp_name]
+						spr.region_rect = Rect2(sp["x"], sp["y"], sp["w"], sp["h"])
+					if init_info.has("pos"):
+						spr.offset = init_info["pos"]
 					root.add_child(spr)
 					spr.owner = root
 					layer_nodes[node_key] = spr
@@ -374,7 +418,7 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 		var fps: float = anim["fps"]
 		var animation := Animation.new()
 		animation.loop_mode = Animation.LOOP_LINEAR
-		animation.length = anim["length"]
+		animation.length = maxf(anim["length"], 1.0 / fps)
 
 		# Active nodes set
 		var active_keys := {}
@@ -384,9 +428,9 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 			if node_key != "":
 				active_keys[node_key] = true
 
-		# Hide inactive nodes at t = 0
-		for node_key in layer_nodes:
-			if not active_keys.has(node_key):
+		# Hide inactive animation nodes at t = 0 (do NOT hide user custom nodes)
+		for node_key in anim_layer_key.values():
+			if not active_keys.has(node_key) and layer_nodes.has(node_key):
 				var node: Node = layer_nodes[node_key]
 				var npath := node.name
 				var t_vis := animation.add_track(Animation.TYPE_VALUE)
@@ -443,6 +487,9 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 			var kf_rot:    Array = []
 			var kf_scl:    Array = []
 			var kf_rect:   Array = []
+			var kf_sprite_pos: Array = []
+			var kf_sprite_rot: Array = []
+			var kf_sprite_scl: Array = []
 			var kf_offset: Array = []
 			var kf_vis:    Array = []
 
@@ -514,11 +561,16 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 							kf_rect.append({"t": time, "v": current_rect})
 							last_rect_val = current_rect
 						
-						if not use_pivot_wrappers:
+						if use_pivot_wrappers:
+							kf_sprite_pos.append({"t": time, "v": sprite_pos})
+							kf_sprite_rot.append({"t": time, "v": sprite_rot})
+							kf_sprite_scl.append({"t": time, "v": sprite_scale})
+						else:
 							var current_offset := sprite_pos
 							if last_offset_val == null or last_offset_val != current_offset:
 								kf_offset.append({"t": time, "v": current_offset})
 								last_offset_val = current_offset
+					break
 
 			kf_rot = _normalize_angle_sequence(kf_rot)
 
@@ -588,12 +640,24 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 	if packed.pack(root) != OK:
 		root.queue_free()
 		return "Failed to repack updated scene."
+	_ensure_parent_dir(out_path)
 	if ResourceSaver.save(packed, out_path) != OK:
 		root.queue_free()
 		return "Failed to save updated scene: " + out_path
 
 	root.queue_free()
 	return ""
+
+func _is_atlas_json(data: Dictionary) -> bool:
+	return data.has("ATLAS") or data.has("sprites") or data.has("SPRITES")
+
+func _has_timeline_animation(tl: Dictionary) -> bool:
+	for layer in tl.get("L", []):
+		if layer.get("LN", "") == "CenterMarker": continue
+		for fr in layer.get("FR", []):
+			if not fr.get("E", []).is_empty():
+				return true
+	return false
 
 # Helper to detect if JSON is a master animation file containing nested animation symbols inside SD
 func _is_master_animation_json(data: Dictionary) -> bool:
@@ -605,15 +669,57 @@ func _is_master_animation_json(data: Dictionary) -> bool:
 	return false
 
 func _is_animation_symbol(sym_def: Dictionary) -> bool:
+	var sym_name: String = sym_def.get("SN", "")
+	if sym_name.begins_with("EDAPT") or sym_name.contains("Center Marker") or sym_name.contains("CenterMarker") or sym_name.contains("MagnetTarget"):
+		return false
 	var tl = sym_def.get("TL", {})
-	for layer in tl.get("L", []):
+	var layers: Array = tl.get("L", [])
+	if layers.is_empty():
+		return false
+	var anim_layers := 0
+	var total_frames := 0
+	var has_sub_symbols := false
+	for layer in layers:
 		if layer.get("LN", "") == "CenterMarker":
 			continue
-		for fr in layer.get("FR", []):
+		var fr_arr: Array = layer.get("FR", [])
+		if fr_arr.is_empty():
+			continue
+		var has_elements := false
+		for fr in fr_arr:
+			total_frames = max(total_frames, int(fr.get("I", 0)) + int(fr.get("DU", 1)))
 			for elem in fr.get("E", []):
+				has_elements = true
 				if elem.has("SI"):
-					return true
-	return false
+					has_sub_symbols = true
+		if has_elements:
+			anim_layers += 1
+	return has_sub_symbols and ((anim_layers > 1 and total_frames > 1) or total_frames > 2)
+
+func _get_initial_sprite_info(node_key: String, all_animations: Array) -> Dictionary:
+	for anim in all_animations:
+		for layer in anim.get("layers", []):
+			var base_name := _sanitize_node_name(layer.get("name", ""))
+			var key: String = base_name
+			if node_key.contains("#"):
+				key = base_name + "#" + str(layer.get("layer_idx", 0))
+			if key == node_key or base_name == node_key:
+				for fr in layer.get("frames", []):
+					for elem in fr.get("elements", []):
+						if elem.get("type") == "sprite":
+							return {
+								"sprite": elem.get("sprite_name", ""),
+								"pos": Vector2.ZERO,
+								"rot": 0.0,
+								"scale": Vector2.ONE
+							}
+						elif elem.get("type") == "symbol":
+							var sym = elem.get("symbol_name", "")
+							var ff = elem.get("first_frame", 0)
+							var info = _resolve_symbol(sym, ff)
+							if not info.is_empty():
+								return info
+	return {}
 
 # ─────────────────────────────────────────────────────────
 # Scan folder untuk semua *.json
@@ -633,7 +739,7 @@ func _scan_json_files(folder: String) -> Array:
 	while fname != "":
 		if not dir.current_is_dir() and fname.ends_with(".json"):
 			var lower := fname.to_lower()
-			if not lower.begins_with("spritemap") and not lower.begins_with("atlas") and not lower.begins_with("spritesheet"):
+			if not lower.begins_with("spritemap") and not lower.begins_with("atlas") and not lower.begins_with("spritesheet") and not lower.contains("atlas") and not lower.contains("spritemap") and not lower.contains("spritesheet"):
 				result.append(clean_folder.path_join(fname))
 		fname = dir.get_next()
 	dir.list_dir_end()
@@ -692,9 +798,9 @@ func _normalize_json(node, parent_key: String = ""):
 				var asi_norm := {}
 				for k in val:
 					var v = val[k]
-					if k == "name":
+					if k == "name" or k == "N":
 						asi_norm["N"] = _normalize_json(v, "ASI")
-					elif k == "Matrix3D":
+					elif k == "Matrix3D" or k == "M3D" or k.to_lower() == "matrix3d" or k.to_lower() == "m3d":
 						if v is Dictionary:
 							asi_norm["M3D"] = _matrix_dict_to_array(v)
 						else:
@@ -706,22 +812,22 @@ func _normalize_json(node, parent_key: String = ""):
 				var si_norm := {}
 				for k in val:
 					var v = val[k]
-					if k == "firstFrame":
+					if k == "firstFrame" or k == "FF":
 						si_norm["FF"] = _normalize_json(v, "SI")
-					elif k == "loop":
+					elif k == "loop" or k == "LP":
 						var loop_val = str(v).to_lower()
-						if loop_val == "singleframe":
+						if loop_val == "singleframe" or loop_val == "sf":
 							si_norm["LP"] = "SF"
-						elif loop_val == "loop":
+						elif loop_val == "loop" or loop_val == "lp":
 							si_norm["LP"] = "LP"
 						else:
 							si_norm["LP"] = v
-					elif k == "Matrix3D":
+					elif k == "Matrix3D" or k == "M3D" or k.to_lower() == "matrix3d" or k.to_lower() == "m3d":
 						if v is Dictionary:
 							si_norm["M3D"] = _matrix_dict_to_array(v)
 						else:
 							si_norm["M3D"] = _normalize_json(v, "SI")
-					elif k == "SYMBOL_name":
+					elif k == "SYMBOL_name" or k == "SN":
 						si_norm["SN"] = _normalize_json(v, "SI")
 					else:
 						si_norm[k] = _normalize_json(v, "SI")
@@ -740,11 +846,27 @@ func _normalize_json(node, parent_key: String = ""):
 		return node
 
 func _matrix_dict_to_array(dict: Dictionary) -> Array:
+	if dict.has("a") or dict.has("tx") or dict.has("ty"):
+		var a = float(dict.get("a", 1.0))
+		var b = float(dict.get("b", 0.0))
+		var c = float(dict.get("c", 0.0))
+		var d = float(dict.get("d", 1.0))
+		var tx = float(dict.get("tx", dict.get("x", 0.0)))
+		var ty = float(dict.get("ty", dict.get("y", 0.0)))
+		return [
+			a, b, 0.0, 0.0,
+			c, d, 0.0, 0.0,
+			0.0, 0.0, 1.0, 0.0,
+			tx, ty, 0.0, 1.0
+		]
 	return [
 		float(dict.get("m00", 1.0)), float(dict.get("m01", 0.0)), float(dict.get("m02", 0.0)), float(dict.get("m03", 0.0)),
 		float(dict.get("m10", 0.0)), float(dict.get("m11", 1.0)), float(dict.get("m12", 0.0)), float(dict.get("m13", 0.0)),
 		float(dict.get("m20", 0.0)), float(dict.get("m21", 0.0)), float(dict.get("m22", 1.0)), float(dict.get("m23", 0.0)),
-		float(dict.get("m30", 0.0)), float(dict.get("m31", 0.0)), float(dict.get("m32", 0.0)), float(dict.get("m33", 1.0))
+		float(dict.get("m30", dict.get("tx", dict.get("x", 0.0)))),
+		float(dict.get("m31", dict.get("ty", dict.get("y", 0.0)))),
+		float(dict.get("m32", 0.0)),
+		float(dict.get("m33", 1.0))
 	]
 
 func _load_texture(path: String) -> Texture2D:
@@ -878,26 +1000,45 @@ func _parse_animations(data: Dictionary, fps: float) -> Array:
 	for layer in parsed_layers:
 		for fr in layer["frames"]:
 			max_frame = max(max_frame, int(fr["index"]) + int(fr["duration"]))
-
+	var anim_length := maxf(max_frame / fps, 1.0 / fps)
 	anims.append({
 		"anim_name": an.get("SN", an.get("N", "animation")),
 		"layers": parsed_layers,
 		"fps": fps,
-		"length": max_frame / fps
+		"length": anim_length
 	})
 	return anims
 
 # ─────────────────────────────────────────────────────────
 # Decompose M3D
 # ─────────────────────────────────────────────────────────
-func _decompose_m3d(m: Array) -> Dictionary:
-	var a := float(m[0]); var b := float(m[1])
-	var c := float(m[4]); var d := float(m[5])
+func _decompose_m3d(m) -> Dictionary:
+	if m is Dictionary:
+		m = _matrix_dict_to_array(m)
+	if not m is Array:
+		m = [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]
+
+	var a := 1.0
+	var b := 0.0
+	var c := 0.0
+	var d := 1.0
+	var tx := 0.0
+	var ty := 0.0
+
+	if m.size() >= 16:
+		a = float(m[0]); b = float(m[1])
+		c = float(m[4]); d = float(m[5])
+		tx = float(m[12]); ty = float(m[13])
+	elif m.size() >= 6:
+		a = float(m[0]); b = float(m[1])
+		c = float(m[2]); d = float(m[3])
+		tx = float(m[4]); ty = float(m[5])
+
 	var sx := sqrt(a*a + b*b)
 	var sy := sqrt(c*c + d*d)
 	if (a*d - b*c) < 0.0: sy = -sy
 	return {
-		"pos":   Vector2(float(m[12]), float(m[13])),
+		"pos":   Vector2(tx, ty),
 		"rot":   atan2(b, a),
 		"scale": Vector2(sx, sy)
 	}
@@ -912,7 +1053,7 @@ func _normalize_angle_sequence(angles: Array) -> Array:
 	for i in range(1, out.size()):
 		var prev: float = out[i - 1]
 		var curr: float = out[i]
-		var diff: float = fmod(curr - prev + 3.0 * PI, TAU) - PI
+		var diff: float = angle_difference(prev, curr)
 		out[i] = prev + diff
 	return out
 
@@ -1017,6 +1158,9 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 			final_name = node_key + str(counter)
 			counter += 1
 
+		var init_info := _get_initial_sprite_info(node_key, all_animations)
+		var init_sp_name: String = init_info.get("sprite", "")
+
 		if use_pivot_wrappers:
 			# Feature 3: Use Pivot Wrapper nodes
 			var wrapper := Node2D.new()
@@ -1031,14 +1175,13 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 			spr.centered = false
 			spr.region_enabled = true
 			
-			var def_info = _resolve_symbol(node_key, 0)
-			if not def_info.is_empty():
-				if def_info.has("pos"):
-					spr.position = def_info["pos"]
-					spr.rotation = def_info["rot"]
-					spr.scale = def_info["scale"]
-				else:
-					spr.offset = Vector2(def_info.get("ox", 0.0), def_info.get("oy", 0.0))
+			if init_sp_name != "" and sprites.has(init_sp_name):
+				var sp = sprites[init_sp_name]
+				spr.region_rect = Rect2(sp["x"], sp["y"], sp["w"], sp["h"])
+			if init_info.has("pos"):
+				spr.position = init_info["pos"]
+				spr.rotation = init_info.get("rot", 0.0)
+				spr.scale = init_info.get("scale", Vector2.ONE)
 			
 			wrapper.add_child(spr)
 			spr.owner = root
@@ -1052,9 +1195,11 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 			spr.centered = false
 			spr.region_enabled = true
 			
-			var def_info = _resolve_symbol(node_key, 0)
-			if not def_info.is_empty():
-				spr.offset = def_info.get("pos", Vector2(def_info.get("ox", 0.0), def_info.get("oy", 0.0)))
+			if init_sp_name != "" and sprites.has(init_sp_name):
+				var sp = sprites[init_sp_name]
+				spr.region_rect = Rect2(sp["x"], sp["y"], sp["w"], sp["h"])
+			if init_info.has("pos"):
+				spr.offset = init_info["pos"]
 				
 			root.add_child(spr)
 			spr.owner = root
@@ -1067,7 +1212,7 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 		var fps: float = anim["fps"]
 		var animation := Animation.new()
 		animation.loop_mode = Animation.LOOP_LINEAR
-		animation.length = anim["length"]
+		animation.length = maxf(anim["length"], 1.0 / fps)
 
 		# Lacak node mana saja yang aktif di animasi ini
 		var active_keys := {}
@@ -1137,6 +1282,9 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 			var kf_rot:    Array = []
 			var kf_scl:    Array = []
 			var kf_rect:   Array = []
+			var kf_sprite_pos: Array = []
+			var kf_sprite_rot: Array = []
+			var kf_sprite_scl: Array = []
 			var kf_offset: Array = []
 			var kf_vis:    Array = []
 
@@ -1211,11 +1359,16 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 							kf_rect.append({"t": time, "v": current_rect})
 							last_rect_val = current_rect
 						
-						if not use_pivot_wrappers:
+						if use_pivot_wrappers:
+							kf_sprite_pos.append({"t": time, "v": sprite_pos})
+							kf_sprite_rot.append({"t": time, "v": sprite_rot})
+							kf_sprite_scl.append({"t": time, "v": sprite_scale})
+						else:
 							var current_offset := sprite_pos
 							if last_offset_val == null or last_offset_val != current_offset:
 								kf_offset.append({"t": time, "v": current_offset})
 								last_offset_val = current_offset
+					break
 
 			# Normalisasi urutan sudut sebelum insert ke track
 			kf_rot = _normalize_angle_sequence(kf_rot)
@@ -1312,6 +1465,7 @@ func _build_scene(sprites: Dictionary, texture: Texture2D,
 	if packed.pack(root) != OK:
 		root.queue_free()
 		return "PackedScene.pack() failed."
+	_ensure_parent_dir(out_path)
 	if ResourceSaver.save(packed, out_path) != OK:
 		root.queue_free()
 		return "ResourceSaver.save() failed for: " + out_path
@@ -1338,6 +1492,8 @@ func import_in_memory(atlas_json_path: String, anim_folder: String,
 					  use_pivot_wrappers: bool = true, add_skin_swapper: bool = true,
 					  texture_filter_mode: String = "Linear",
 					  interpolation_mode: String = "Linear") -> Node2D:
+	_symbol_map.clear()
+
 	var atlas_data = _load_json(atlas_json_path)
 	if atlas_data is String: return null
 	var sprites: Dictionary = _parse_atlas(atlas_data)
@@ -1360,13 +1516,19 @@ func import_in_memory(atlas_json_path: String, anim_folder: String,
 # Helpers
 # ─────────────────────────────────────────────────────────
 func _sanitize_node_name(n: String) -> String:
-	var r := n.replace("/","_").replace(" ","_").replace(":","_").replace("-","_")
+	var r := n.strip_edges().replace("/", "_").replace(" ", "_").replace(":", "_").replace("-", "_").replace(".", "_").replace("@", "_").replace("%", "_")
 	if r.is_empty(): r = "Part"
 	if r[0].is_valid_int(): r = "p_" + r
 	return r
 
 func _sanitize_anim_name(n: String) -> String:
-	var r := n.strip_edges().replace(" ","_").replace("/","_").replace(":","_").replace("-","_")
+	var r := n.strip_edges().replace(" ", "_").replace("/", "_").replace(":", "_").replace("-", "_").replace(".", "_").replace("@", "_").replace("%", "_")
 	if r.is_empty(): r = "animation"
 	if r[0].is_valid_int(): r = "anim_" + r
 	return r
+
+func _ensure_parent_dir(path: String) -> void:
+	var base_dir := path.get_base_dir()
+	if not base_dir.is_empty() and not DirAccess.dir_exists_absolute(base_dir):
+		DirAccess.make_dir_recursive_absolute(base_dir)
+

@@ -25,6 +25,18 @@ var _slot_attachments: Dictionary = {} # slot_name (lowercase) -> Node
 
 func _ready() -> void:
 	_init_anim_player()
+	if _global_skin_texture == null:
+		_global_skin_texture = _detect_initial_skin_texture(self)
+
+func _detect_initial_skin_texture(node: Node) -> Texture2D:
+	for child in node.get_children():
+		if child is Sprite2D and child.texture != null:
+			return child.texture
+		if child.get_child_count() > 0:
+			var sub_tex := _detect_initial_skin_texture(child)
+			if sub_tex != null:
+				return sub_tex
+	return null
 
 func _find_anim_player() -> AnimationPlayer:
 	if has_node("AnimationPlayer"):
@@ -155,6 +167,8 @@ func equip(slot_name: String, item_node: Node, replace: bool = true) -> Node:
 			socket = Node2D.new()
 			socket.name = "Socket"
 			target.add_child(socket)
+		if item_node.get_parent():
+			item_node.get_parent().remove_child(item_node)
 		socket.add_child(item_node)
 		_slot_attachments[slot_name.to_lower()] = item_node
 		return item_node
@@ -187,10 +201,19 @@ func find_part(part_name: String) -> Node2D:
 	var direct = get_node_or_null(NodePath(part_name))
 	if direct is Node2D:
 		return direct
+	
+	# Pass 1: exact and prefix matching
 	for child in get_children():
 		if child is Node2D and not child is AnimationPlayer:
 			var cname := child.name.to_lower()
-			if cname == query or cname.begins_with(query + "#") or cname.begins_with(query + "_") or query in cname:
+			if cname == query or cname.begins_with(query + "#") or cname.begins_with(query + "_"):
+				return child
+
+	# Pass 2: substring / fuzzy matching
+	for child in get_children():
+		if child is Node2D and not child is AnimationPlayer:
+			var cname := child.name.to_lower()
+			if query in cname:
 				return child
 	return null
 
