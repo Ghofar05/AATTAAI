@@ -79,9 +79,9 @@ Check out these video walkthroughs and guides:
 
 Looking for production-ready, high-quality Adobe Animate 2D character rigs, animation packs, and game assets designed to work seamlessly with **AATTAAI**?
 
-- 🛒 **Official Asset Store / Itch.io**: [bonebox.itch.io](https://bonebox.itch.io/) *(Character animation packs, boss monsters, weapon sets & VFX)*
+- 🛒 **Official Partner Assets Itch.io**: [stableimage.itch.io](https://stableimage.itch.io/) *(Character animation packs, boss monsters, weapon sets & VFX)*
 - 🛠️ **Batch Export Tool (JSFL)**: [Batch-Export-Texture-Atlas](https://github.com/boneboxid/Batch-Export-Texture-Atlas) *(Batch export texture atlas symbols with one click in Adobe Animate)*
-- 💬 **Community & Support**: Follow and support on YouTube / Itch.io for updates, new character packs, and tutorials!
+- 💬 **Community & Support**: give a STAR ⭐!
 
 ---
 
