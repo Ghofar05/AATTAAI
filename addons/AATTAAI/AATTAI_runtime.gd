@@ -297,22 +297,9 @@ func build(atlas_path: String, anim_path: String, tex_path: String, anim_folder:
 			animation.track_set_interpolation_type(t_vis, Animation.INTERPOLATION_NEAREST)
 			animation.track_set_interpolation_type(t_z,   Animation.INTERPOLATION_NEAREST)
 
-			var t_sprite_pos := -1
-			var t_sprite_rot := -1
-			var t_sprite_scl := -1
 			var to_ := -1
 
-			if p_use_pivot_wrappers:
-				t_sprite_pos = animation.add_track(Animation.TYPE_VALUE)
-				t_sprite_rot = animation.add_track(Animation.TYPE_VALUE)
-				t_sprite_scl = animation.add_track(Animation.TYPE_VALUE)
-				animation.track_set_path(t_sprite_pos, NodePath(sprite_path + ":position"))
-				animation.track_set_path(t_sprite_rot, NodePath(sprite_path + ":rotation"))
-				animation.track_set_path(t_sprite_scl, NodePath(sprite_path + ":scale"))
-				animation.track_set_interpolation_type(t_sprite_pos, Animation.INTERPOLATION_NEAREST)
-				animation.track_set_interpolation_type(t_sprite_rot, Animation.INTERPOLATION_NEAREST)
-				animation.track_set_interpolation_type(t_sprite_scl, Animation.INTERPOLATION_NEAREST)
-			else:
+			if not p_use_pivot_wrappers:
 				to_ = animation.add_track(Animation.TYPE_VALUE)
 				animation.track_set_path(to_, NodePath(sprite_path+":offset"))
 				animation.track_set_interpolation_type(to_, Animation.INTERPOLATION_NEAREST)
@@ -322,9 +309,6 @@ func build(atlas_path: String, anim_path: String, tex_path: String, anim_folder:
 			var kf_rot:    Array = []
 			var kf_scl:    Array = []
 			var kf_rect:   Array = []
-			var kf_sprite_pos: Array = []
-			var kf_sprite_rot: Array = []
-			var kf_sprite_scl: Array = []
 			var kf_offset: Array = []
 			var kf_vis:    Array = []
 
@@ -397,11 +381,7 @@ func build(atlas_path: String, anim_path: String, tex_path: String, anim_folder:
 							kf_rect.append({"t": t, "v": current_rect})
 							last_rect_val = current_rect
 						
-						if p_use_pivot_wrappers:
-							kf_sprite_pos.append({"t": t, "v": sprite_pos})
-							kf_sprite_rot.append({"t": t, "v": sprite_rot})
-							kf_sprite_scl.append({"t": t, "v": sprite_scale})
-						else:
+						if not p_use_pivot_wrappers:
 							var current_offset := sprite_pos
 							if last_offset_val == null or last_offset_val != current_offset:
 								kf_offset.append({"t": t, "v": current_offset})
@@ -457,14 +437,7 @@ func build(atlas_path: String, anim_path: String, tex_path: String, anim_folder:
 
 			for entry in kf_rect:
 				animation.track_insert_key(trc, entry["t"], entry["v"])
-			if p_use_pivot_wrappers:
-				for entry in kf_sprite_pos:
-					animation.track_insert_key(t_sprite_pos, entry["t"], entry["v"])
-				for entry in kf_sprite_rot:
-					animation.track_insert_key(t_sprite_rot, entry["t"], entry["v"])
-				for entry in kf_sprite_scl:
-					animation.track_insert_key(t_sprite_scl, entry["t"], entry["v"])
-			else:
+			if not p_use_pivot_wrappers:
 				for entry in kf_offset:
 					animation.track_insert_key(to_, entry["t"], entry["v"])
 			for entry in kf_vis:

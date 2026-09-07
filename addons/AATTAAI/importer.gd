@@ -431,22 +431,9 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 			animation.track_set_interpolation_type(t_vis,    Animation.INTERPOLATION_NEAREST)
 			animation.track_set_interpolation_type(t_z,      Animation.INTERPOLATION_NEAREST)
 
-			var t_sprite_pos := -1
-			var t_sprite_rot := -1
-			var t_sprite_scl := -1
 			var t_offset := -1
 
-			if use_pivot_wrappers:
-				t_sprite_pos = animation.add_track(Animation.TYPE_VALUE)
-				t_sprite_rot = animation.add_track(Animation.TYPE_VALUE)
-				t_sprite_scl = animation.add_track(Animation.TYPE_VALUE)
-				animation.track_set_path(t_sprite_pos, NodePath(sprite_path + ":position"))
-				animation.track_set_path(t_sprite_rot, NodePath(sprite_path + ":rotation"))
-				animation.track_set_path(t_sprite_scl, NodePath(sprite_path + ":scale"))
-				animation.track_set_interpolation_type(t_sprite_pos, Animation.INTERPOLATION_NEAREST)
-				animation.track_set_interpolation_type(t_sprite_rot, Animation.INTERPOLATION_NEAREST)
-				animation.track_set_interpolation_type(t_sprite_scl, Animation.INTERPOLATION_NEAREST)
-			else:
+			if not use_pivot_wrappers:
 				t_offset = animation.add_track(Animation.TYPE_VALUE)
 				animation.track_set_path(t_offset, NodePath(sprite_path + ":offset"))
 				animation.track_set_interpolation_type(t_offset, Animation.INTERPOLATION_NEAREST)
@@ -456,9 +443,6 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 			var kf_rot:    Array = []
 			var kf_scl:    Array = []
 			var kf_rect:   Array = []
-			var kf_sprite_pos: Array = []
-			var kf_sprite_rot: Array = []
-			var kf_sprite_scl: Array = []
 			var kf_offset: Array = []
 			var kf_vis:    Array = []
 
@@ -530,11 +514,7 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 							kf_rect.append({"t": time, "v": current_rect})
 							last_rect_val = current_rect
 						
-						if use_pivot_wrappers:
-							kf_sprite_pos.append({"t": time, "v": sprite_pos})
-							kf_sprite_rot.append({"t": time, "v": sprite_rot})
-							kf_sprite_scl.append({"t": time, "v": sprite_scale})
-						else:
+						if not use_pivot_wrappers:
 							var current_offset := sprite_pos
 							if last_offset_val == null or last_offset_val != current_offset:
 								kf_offset.append({"t": time, "v": current_offset})
@@ -590,14 +570,7 @@ func update_existing_scene(atlas_json_path: String, anim_folder: String,
 
 			for entry in kf_rect:
 				animation.track_insert_key(t_rect, entry["t"], entry["v"])
-			if use_pivot_wrappers:
-				for entry in kf_sprite_pos:
-					animation.track_insert_key(t_sprite_pos, entry["t"], entry["v"])
-				for entry in kf_sprite_rot:
-					animation.track_insert_key(t_sprite_rot, entry["t"], entry["v"])
-				for entry in kf_sprite_scl:
-					animation.track_insert_key(t_sprite_scl, entry["t"], entry["v"])
-			else:
+			if not use_pivot_wrappers:
 				for entry in kf_offset:
 					animation.track_insert_key(t_offset, entry["t"], entry["v"])
 			for entry in kf_vis:
@@ -1151,22 +1124,9 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 			animation.track_set_interpolation_type(t_vis,    Animation.INTERPOLATION_NEAREST)
 			animation.track_set_interpolation_type(t_z,      Animation.INTERPOLATION_NEAREST)
 
-			var t_sprite_pos := -1
-			var t_sprite_rot := -1
-			var t_sprite_scl := -1
 			var t_offset := -1
 
-			if use_pivot_wrappers:
-				t_sprite_pos = animation.add_track(Animation.TYPE_VALUE)
-				t_sprite_rot = animation.add_track(Animation.TYPE_VALUE)
-				t_sprite_scl = animation.add_track(Animation.TYPE_VALUE)
-				animation.track_set_path(t_sprite_pos, NodePath(sprite_path + ":position"))
-				animation.track_set_path(t_sprite_rot, NodePath(sprite_path + ":rotation"))
-				animation.track_set_path(t_sprite_scl, NodePath(sprite_path + ":scale"))
-				animation.track_set_interpolation_type(t_sprite_pos, Animation.INTERPOLATION_NEAREST)
-				animation.track_set_interpolation_type(t_sprite_rot, Animation.INTERPOLATION_NEAREST)
-				animation.track_set_interpolation_type(t_sprite_scl, Animation.INTERPOLATION_NEAREST)
-			else:
+			if not use_pivot_wrappers:
 				t_offset = animation.add_track(Animation.TYPE_VALUE)
 				animation.track_set_path(t_offset, NodePath(sprite_path + ":offset"))
 				animation.track_set_interpolation_type(t_offset, Animation.INTERPOLATION_NEAREST)
@@ -1177,9 +1137,6 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 			var kf_rot:    Array = []
 			var kf_scl:    Array = []
 			var kf_rect:   Array = []
-			var kf_sprite_pos: Array = []
-			var kf_sprite_rot: Array = []
-			var kf_sprite_scl: Array = []
 			var kf_offset: Array = []
 			var kf_vis:    Array = []
 
@@ -1254,11 +1211,7 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 							kf_rect.append({"t": time, "v": current_rect})
 							last_rect_val = current_rect
 						
-						if use_pivot_wrappers:
-							kf_sprite_pos.append({"t": time, "v": sprite_pos})
-							kf_sprite_rot.append({"t": time, "v": sprite_rot})
-							kf_sprite_scl.append({"t": time, "v": sprite_scale})
-						else:
+						if not use_pivot_wrappers:
 							var current_offset := sprite_pos
 							if last_offset_val == null or last_offset_val != current_offset:
 								kf_offset.append({"t": time, "v": current_offset})
@@ -1315,14 +1268,7 @@ func _create_scene_tree(sprites: Dictionary, texture: Texture2D,
 
 			for entry in kf_rect:
 				animation.track_insert_key(t_rect, entry["t"], entry["v"])
-			if use_pivot_wrappers:
-				for entry in kf_sprite_pos:
-					animation.track_insert_key(t_sprite_pos, entry["t"], entry["v"])
-				for entry in kf_sprite_rot:
-					animation.track_insert_key(t_sprite_rot, entry["t"], entry["v"])
-				for entry in kf_sprite_scl:
-					animation.track_insert_key(t_sprite_scl, entry["t"], entry["v"])
-			else:
+			if not use_pivot_wrappers:
 				for entry in kf_offset:
 					animation.track_insert_key(t_offset, entry["t"], entry["v"])
 			for entry in kf_vis:
